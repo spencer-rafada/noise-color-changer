@@ -6,10 +6,12 @@ interface ControlPanelProps {
   audioLevel: number;
   sensitivity: number;
   bufferTime: number;
+  musicVolume: number;
   error: string | null;
   onToggle: () => void;
   onSensitivityChange: (value: number) => void;
   onBufferTimeChange: (value: number) => void;
+  onMusicVolumeChange: (value: number) => void;
 }
 
 export function ControlPanel({
@@ -17,10 +19,12 @@ export function ControlPanel({
   audioLevel,
   sensitivity,
   bufferTime,
+  musicVolume,
   error,
   onToggle,
   onSensitivityChange,
   onBufferTimeChange,
+  onMusicVolumeChange,
 }: ControlPanelProps) {
   return (
     <div className="control-panel">
@@ -53,6 +57,14 @@ export function ControlPanel({
           max={10}
           unit="s"
           onChange={onBufferTimeChange}
+        />
+        <Slider
+          label="Music Volume"
+          value={Math.round(musicVolume * 100)}
+          min={0}
+          max={100}
+          unit="%"
+          onChange={(value) => onMusicVolumeChange(value / 100)}
         />
       </div>
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ColorBackground } from './components/ColorBackground';
 import { ControlPanel } from './components/ControlPanel';
 import { useAudioLevel } from './hooks/useAudioLevel';
+import { useBackgroundMusic } from './hooks/useBackgroundMusic';
 import { getRandomPastelColor, getInitialColor } from './utils/colors';
 
 const DEFAULT_SENSITIVITY = 10;
@@ -21,6 +22,14 @@ function App() {
     startListening,
     stopListening
   } = useAudioLevel();
+
+  const {
+    volume: musicVolume,
+    error: musicError,
+    startMusic,
+    stopMusic,
+    setVolume: setMusicVolume,
+  } = useBackgroundMusic();
 
   // Wake Lock: keep screen on while listening
   useEffect(() => {
@@ -67,11 +76,13 @@ function App() {
     }
   }, [audioLevel, isListening, sensitivity, bufferTime]);
 
-  const handleToggle = () => {
+  const handleToggle = async () => {
     if (isListening) {
       stopListening();
+      stopMusic();
     } else {
       startListening();
+      await startMusic();
     }
   };
 
@@ -82,10 +93,12 @@ function App() {
         audioLevel={audioLevel}
         sensitivity={sensitivity}
         bufferTime={bufferTime}
-        error={error}
+        musicVolume={musicVolume}
+        error={error || musicError}
         onToggle={handleToggle}
         onSensitivityChange={setSensitivity}
         onBufferTimeChange={setBufferTime}
+        onMusicVolumeChange={setMusicVolume}
       />
     </ColorBackground>
   );
