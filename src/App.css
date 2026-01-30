@@ -29,6 +29,7 @@ html, body, #root {
   border-radius: 20px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(10px);
+  transition: gap 300ms ease, padding 300ms ease;
 }
 
 /* Start/Stop Button */
@@ -75,6 +76,74 @@ html, body, #root {
   font-size: 14px;
   color: #888;
   text-align: center;
+}
+
+/* Control panel header - always visible row */
+.control-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+/* Expand/collapse toggle button */
+.expand-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.08);
+  color: #555;
+  font-size: 16px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s, transform 300ms ease;
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+
+.expand-toggle.expanded {
+  transform: rotate(0deg);
+}
+
+.expand-toggle:active {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Collapsible content animation */
+.collapsible-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 300ms ease;
+  width: 100%;
+}
+
+.collapsible-content.expanded {
+  grid-template-rows: 1fr;
+}
+
+.collapsible-inner {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+/* Collapsed state */
+.control-panel--collapsed {
+  gap: 12px;
+  padding: 16px;
+}
+
+/* Hide volume slider on mobile (iOS Safari volume is read-only) */
+.volume-slider-wrapper {
+  display: none;
+  width: 100%;
 }
 
 /* Sound Level Meter */
@@ -200,5 +269,9 @@ html, body, #root {
   .control-panel {
     max-width: 400px;
     margin: 40px auto;
+  }
+
+  .volume-slider-wrapper {
+    display: block;
   }
 }
