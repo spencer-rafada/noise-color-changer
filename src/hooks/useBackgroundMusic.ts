@@ -9,7 +9,7 @@ interface UseBackgroundMusicReturn {
   setVolume: (volume: number) => void;
 }
 
-const MUSIC_PATH = '/music/lullaby.mp3';
+const MUSIC_PATH = `${import.meta.env.BASE_URL}music/lullaby.mp3`;
 const DEFAULT_VOLUME = 0.5;
 
 export function useBackgroundMusic(): UseBackgroundMusicReturn {
