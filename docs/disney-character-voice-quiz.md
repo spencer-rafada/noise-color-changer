@@ -2,11 +2,11 @@
 
 ## Overview
 
-Extend the existing Noise Color Changer into a two-mode application. The new **Disney Character Voice Quiz** mode displays a random Disney character image and challenges the user to say the character's name out loud. The app transcribes the speech and validates whether the answer is correct.
-
-The existing Noise Color Changer mode remains fully functional. Users switch between modes via a top-level tab control.
+The Noise Color Changer app has been extended into a two-mode application. The new **Disney Character Voice Quiz** mode displays a random Disney character image and challenges the user to identify the character. A top-level tab control switches between modes.
 
 **Target audience:** General / all ages.
+
+**Status:** Part 1 (character display, filtering, skipping) is complete. Part 2 (voice recognition) is not yet implemented.
 
 ---
 
@@ -24,21 +24,27 @@ The existing Noise Color Changer mode remains fully functional. Users switch bet
   (existing behavior)     (new feature)
 ```
 
-### Disney Quiz Flow
+### Current Quiz Flow (Part 1)
 
-1. App fetches a random Disney character (image + name) from the API.
-2. Character image is displayed prominently on screen.
-3. User taps **"Start Listening"** to activate the microphone.
-4. User speaks the character's name.
-5. App transcribes the speech in real-time (interim results shown as the user speaks).
-6. Once speech ends, the app compares the transcript to the character name using fuzzy matching.
-7. **Correct** — green celebration feedback, score increments, background color changes.
-8. **Incorrect** — the correct name is revealed.
-9. After a brief delay, the next character loads automatically. A "Next" button is also available.
+1. App fetches a random Disney character from the API (or hardcoded pool).
+2. Character image is displayed with a film hint ("From: Frozen").
+3. User can **Skip** to load the next character.
+4. A **Movie Filter** dropdown lets users limit characters to a specific film.
+5. "Speak Answer" button is visible but disabled (placeholder for Part 2).
+
+### Planned Quiz Flow (Part 2 — Not Yet Implemented)
+
+1. User taps **"Start Listening"** to activate the microphone.
+2. User speaks the character's name.
+3. App transcribes speech in real-time (interim results shown).
+4. Final transcript is compared to the character name using fuzzy matching.
+5. **Correct** — green feedback, score increments, background color changes.
+6. **Incorrect** — the correct name is revealed.
+7. "Next" button loads the next character.
 
 ---
 
-## Part 1: Disney Character API
+## Disney API
 
 ### API: disneyapi.dev
 
@@ -47,117 +53,30 @@ The existing Noise Color Changer mode remains fully functional. Users switch bet
 | Base URL | `https://api.disneyapi.dev` |
 | Auth | None required |
 | Methods | GET only |
-| Format | REST (GraphQL also available) |
-| Characters | 9,820 total |
+| Format | REST |
+| Characters | ~9,820 total |
 
-### Endpoints
+### Endpoints Used
 
 | Endpoint | Description |
 |---|---|
-| `GET /character` | List all characters (paginated) |
-| `GET /character/:id` | Get a single character by ID |
-| `GET /character?name=value` | Filter characters by name |
+| `GET /character?page=N&pageSize=50` | Paginated character listing |
+| `GET /character?films=NAME&pageSize=200` | Filter by film name |
 
-**Query parameters:** `page` (default: 1), `pageSize` (default: 50).
+### API Quirks Discovered
 
-### Response Format
+**Single-object response:** When a query returns exactly one character, the API returns `data` as a single object instead of an array. Our `DisneyApiResponse` type accounts for this:
 
-```json
-{
-  "info": {
-    "count": 9820,
-    "totalPages": 197,
-    "previousPage": null,
-    "nextPage": "https://api.disneyapi.dev/character?page=2&pageSize=50"
-  },
-  "data": [
-    {
-      "_id": 112,
-      "name": "Mickey Mouse",
-      "imageUrl": "https://static.wikia.nocookie.net/disney/images/...",
-      "films": ["Fantasia", "Fun and Fancy Free"],
-      "tvShows": ["Mickey Mouse Clubhouse"],
-      "videoGames": ["Kingdom Hearts"],
-      "parkAttractions": ["Mickey's PhilharMagic"],
-      "allies": ["Minnie Mouse", "Donald Duck"],
-      "enemies": ["Pete"],
-      "sourceUrl": "https://disney.fandom.com/wiki/Mickey_Mouse",
-      "url": "https://api.disneyapi.dev/character/112"
-    }
-  ]
+```typescript
+export interface DisneyApiResponse {
+  info: { count: number; totalPages: number; ... };
+  data: DisneyCharacter[] | DisneyCharacter;  // Union type
 }
 ```
 
-### Random Character Strategy
+A `normalizeData()` helper wraps single objects in an array before processing.
 
-Fetching all 9,820 characters upfront is wasteful. Instead:
-
-1. On first call, fetch page 1 to learn `totalPages`. Cache this value.
-2. Generate a random page number (1 to `totalPages`).
-3. Fetch that page (`GET /character?page=<random>&pageSize=50`).
-4. Pick a random character from the returned array.
-5. Filter out characters without a valid `imageUrl` or with no `films` entries (ensures recognizable characters with images).
-
-Cache fetched pages in memory to avoid redundant requests during a session.
-
-### Image Handling
-
-Character images come from the Disney Fandom wiki CDN. Some URLs may be broken or low-resolution.
-
-- Use an `onError` handler on the `<img>` element to detect broken images.
-- On error, show a fallback placeholder and auto-advance to the next character.
-- Use `object-fit: contain` for varying aspect ratios.
-
----
-
-## Part 2: Voice Recognition & Transcription
-
-### Technology: Web Speech API
-
-The Web Speech API is a browser-native interface — no external libraries or API keys required.
-
-| Detail | Value |
-|---|---|
-| Interface | `SpeechRecognition` (or `webkitSpeechRecognition` in Chrome) |
-| Browser support | Chrome, Edge, Safari (partial). No Firefox support. |
-| Privacy | Chrome sends audio to Google servers. On-device recognition available in some browsers. |
-| Cost | Free (built into the browser) |
-
-### Configuration
-
-```typescript
-const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-recognition.continuous = false;       // Single utterance per guess
-recognition.interimResults = true;    // Show words as user speaks
-recognition.lang = 'en-US';          // English character names
-```
-
-### Key Events
-
-| Event | Purpose |
-|---|---|
-| `onresult` | Fires with transcription results. Check `isFinal` to distinguish interim vs final results. |
-| `onend` | Fires when recognition stops. Used to trigger answer validation. |
-| `onerror` | Fires on errors: `not-allowed` (mic denied), `no-speech`, `network`. |
-
-### Name Matching Logic
-
-Speech recognition is imperfect. The matching algorithm uses a layered approach from strict to fuzzy:
-
-1. **Exact match** — Normalize both strings (lowercase, trim, remove punctuation). Direct comparison. Confidence: 1.0.
-2. **Contains match** — Check if the character name appears within the transcript (handles "I think it's Elsa"). Confidence: 0.95.
-3. **First-name match** — For multi-word names like "Captain Hook", check if any significant word (4+ chars) from the name appears in the transcript. Confidence: 0.85.
-4. **Levenshtein distance** — Compute edit distance. If `1 - (distance / maxLength) >= 0.7`, count as a match. Handles minor transcription errors like "Elssa" for "Elsa". Confidence: varies.
-
-The threshold is configurable (default: 0.7). No external string-matching libraries are needed — Levenshtein distance is ~20 lines of code.
-
-### Browser Compatibility
-
-The Web Speech API is only reliable in Chrome/Chromium. When the API is not available:
-
-- Detect support on mount: `'SpeechRecognition' in window || 'webkitSpeechRecognition' in window`.
-- Show a clear message: "Voice recognition requires Chrome or Edge."
-- The Noise Color Changer mode remains available in all browsers regardless.
+**Sparse coverage for some films:** The API has very few entries for some popular films. For example, "Cars" only has Lightning McQueen — Mater, Sally, Doc Hudson, and others are completely absent. This led to the hardcoded character fallback system (see below).
 
 ---
 
@@ -165,150 +84,224 @@ The Web Speech API is only reliable in Chrome/Chromium. When the API is not avai
 
 ### Mode Switching
 
-State-based switching in `App.tsx` — no router needed for two modes.
+State-based switching in `App.tsx` with no router. When switching modes, React unmounts the previous mode component, triggering cleanup (microphone release, audio context teardown) via existing `useEffect` return functions.
 
-```typescript
-type AppMode = 'noise-color' | 'disney-quiz';
-
-function App() {
-  const [mode, setMode] = useState<AppMode>('noise-color');
-  return (
-    <>
-      <ModeSwitcher mode={mode} onModeChange={setMode} />
-      {mode === 'noise-color' ? <NoiseColorMode /> : <DisneyQuizMode />}
-    </>
-  );
-}
-```
-
-When switching modes, React unmounts the previous mode component, which triggers cleanup (microphone release, audio context teardown) via existing `useEffect` return functions.
-
-### New File Structure
+### File Structure
 
 ```
 src/
 ├── components/
-│   ├── ModeSwitcher.tsx              # NEW — tab control for mode selection
-│   ├── NoiseColorMode.tsx            # NEW — extracted existing App.tsx logic
+│   ├── ModeSwitcher.tsx              # Tab control for mode selection
+│   ├── NoiseColorMode.tsx            # Extracted existing App.tsx logic
 │   ├── disney-quiz/
-│   │   ├── DisneyQuizMode.tsx        # NEW — main quiz orchestrator
-│   │   ├── CharacterDisplay.tsx      # NEW — character image display
-│   │   ├── SpeechFeedback.tsx        # NEW — transcript & listening indicator
-│   │   ├── QuizResult.tsx            # NEW — correct/incorrect feedback
-│   │   └── ScoreBoard.tsx            # NEW — score tracker
-│   ├── ColorBackground.tsx           # UNCHANGED (reused by quiz)
-│   ├── ControlPanel.tsx              # UNCHANGED
-│   ├── Slider.tsx                    # UNCHANGED
-│   └── SoundLevelMeter.tsx           # UNCHANGED
+│   │   ├── DisneyQuizMode.tsx        # Main quiz orchestrator
+│   │   ├── CharacterDisplay.tsx      # Character image + loading spinner
+│   │   ├── MovieFilter.tsx           # Film dropdown selector
+│   │   ├── SpeechFeedback.tsx        # Transcript & listening indicator (Part 2)
+│   │   ├── QuizResult.tsx            # Correct/incorrect feedback (Part 2)
+│   │   └── ScoreBoard.tsx            # Score tracker (Part 2)
+│   ├── ColorBackground.tsx           # Unchanged (reused by quiz)
+│   ├── ControlPanel.tsx              # Unchanged
+│   ├── Slider.tsx                    # Unchanged
+│   └── SoundLevelMeter.tsx           # Unchanged
 ├── hooks/
-│   ├── useSpeechRecognition.ts       # NEW — Web Speech API wrapper
-│   ├── useDisneyCharacter.ts         # NEW — character fetching logic
-│   ├── useAudioLevel.ts              # UNCHANGED
-│   └── useBackgroundMusic.ts         # UNCHANGED
+│   ├── useDisneyCharacter.ts         # Character fetching + filtering
+│   ├── useAudioLevel.ts              # Unchanged
+│   └── useBackgroundMusic.ts         # Unchanged
 ├── utils/
-│   ├── nameMatching.ts               # NEW — fuzzy name comparison
-│   └── colors.ts                     # UNCHANGED (reused for quiz bg)
+│   ├── nameMatching.ts               # Fuzzy name comparison (for Part 2)
+│   └── colors.ts                     # Unchanged (reused for quiz bg)
 ├── types/
-│   ├── disney.ts                     # NEW — Disney API type definitions
-│   └── speechRecognition.d.ts        # NEW — Web Speech API types
-├── App.tsx                           # MODIFIED — thin shell with mode state
-└── App.css                           # MODIFIED — add quiz & switcher styles
+│   ├── disney.ts                     # Disney API type definitions
+│   └── speechRecognition.d.ts        # Web Speech API types (for Part 2)
+├── data/
+│   └── carsCharacters.ts             # Hardcoded Cars characters
+├── App.tsx                           # Thin shell with mode state
+└── App.css                           # Extended with quiz styles
+
+public/
+└── images/
+    └── cars/                         # 13 locally-served character images
+        ├── lightning-mcqueen.webp
+        ├── mater.webp
+        ├── sally-carrera.webp
+        ├── doc-hudson.webp
+        ├── chick-hicks.webp
+        ├── cruz-ramirez.webp
+        ├── jackson-storm.webp
+        ├── luigi.webp
+        ├── guido.webp
+        ├── fillmore.webp
+        ├── ramone.webp
+        ├── sarge.webp
+        └── the-king.webp
 ```
 
 ### Component Hierarchy (Disney Quiz)
 
 ```
 DisneyQuizMode
-  └── ColorBackground (reused — changes color on correct answer)
-        ├── ScoreBoard (score / total in top corner)
-        ├── CharacterDisplay (large character image, loading state)
-        ├── SpeechFeedback (mic indicator, interim/final transcript)
-        ├── QuizResult (correct/incorrect overlay with character name)
-        └── Start/Next button
+  └── ColorBackground
+        ├── ScoreBoard
+        ├── MovieFilter
+        ├── CharacterDisplay (image + loading spinner + film hint)
+        ├── SpeechFeedback (Part 2)
+        ├── QuizResult (Part 2)
+        └── Quiz controls (Speak Answer [disabled], Skip)
 ```
 
-### New Hooks
+---
 
-**`useSpeechRecognition`** — follows the same ref-based resource pattern as `useAudioLevel`:
-- Stores `SpeechRecognition` instance in a `useRef`
-- Returns `{ transcript, interimTranscript, isListening, isSupported, error, startListening, stopListening, resetTranscript }`
-- Cleans up via `recognition.abort()` on unmount
+## Key Design Decisions
 
-**`useDisneyCharacter`** — manages character fetching with in-memory page cache:
-- Returns `{ character, isLoading, error, fetchNextCharacter }`
-- Caches fetched pages in `useRef<Map<number, DisneyCharacter[]>>()`
-- Uses `AbortController` for request cancellation on unmount
+### 1. Popularity Filter
 
-### Type Definitions
+**Problem:** The API contains ~9,820 characters, many extremely obscure (e.g., background extras, minor one-scene characters with no recognizable traits).
 
-**`DisneyCharacter`**:
-```typescript
-interface DisneyCharacter {
-  _id: number;
-  name: string;
-  imageUrl: string;
-  films: string[];
-  tvShows: string[];
-  videoGames: string[];
-  allies: string[];
-  enemies: string[];
-}
+**Solution:** A popularity score heuristic filters characters before display. The score is the sum of array lengths across all metadata fields:
+
+```
+score = films + tvShows + videoGames + parkAttractions + allies + enemies
 ```
 
-### No New Dependencies
+Characters must have `score >= 10` to be shown. This ensures only characters with meaningful media presence appear in the quiz.
 
-The project currently has zero runtime dependencies beyond React. This feature maintains that:
+Characters must also have a non-empty `imageUrl` and at least one film entry.
+
+### 2. Movie Filter with Curated List
+
+**Problem:** Users wanted to focus on characters from specific films rather than the entire Disney catalog.
+
+**Decision:** A curated dropdown of 17 popular movies rather than a dynamically-fetched list. This avoids an extra API call and ensures only films with adequate character pools are offered.
+
+**Curated films:** Frozen, Moana, The Lion King, Aladdin, The Little Mermaid, Tangled, Toy Story, Mulan, Beauty and the Beast, The Jungle Book, Cinderella, Sleeping Beauty, Wreck-It Ralph, Big Hero 6, Zootopia, Encanto, Cars.
+
+Films with fewer than ~10 valid characters (e.g., Finding Nemo with 3) were excluded except Cars, which uses a hardcoded fallback.
+
+### 3. Hardcoded Cars Characters
+
+**Problem:** The Disney API has only 1 character (Lightning McQueen) for all Cars films. Mater, Sally, Doc Hudson, and others are absent.
+
+**Decision:** 13 Cars characters are hardcoded in `src/data/carsCharacters.ts` with locally-served images. The `useDisneyCharacter` hook checks `HARDCODED_FILMS` before making API requests.
+
+**Characters included:** Lightning McQueen, Mater, Sally Carrera, Doc Hudson, Chick Hicks, Cruz Ramirez, Jackson Storm, Luigi, Guido, Fillmore, Ramone, Sarge, The King.
+
+This pattern is extensible — any film with poor API coverage can be added to `HARDCODED_FILMS`.
+
+### 4. Local Image Serving for Cars
+
+**Problem:** Disney Fandom wiki CDN has hotlink protection. When an `<img>` tag loads a wiki image, the browser sends a `Referer` header pointing to the app's domain. The CDN rejects non-Fandom referrers with a 404.
+
+**Attempted fixes:**
+- `referrerPolicy="no-referrer"` on `<img>` — did not resolve the issue
+- Various URL formats (`/revision/latest/`, `scale-to-width-down`) — all 404'd
+
+**Final solution:** All 13 Cars character images were downloaded as `.webp` files to `public/images/cars/` and served locally. Image URLs use `import.meta.env.BASE_URL` for correct paths under Vite's base config (`/noise-color-changer/`).
+
+Note: `referrerPolicy="no-referrer"` is still set on the `<img>` tag as a general measure for API-sourced wiki images (non-Cars characters).
+
+### 5. Fetching Strategy
+
+**"All Movies" mode:**
+- First call fetches page 1 (`pageSize=50`) to learn `totalPages`
+- Each subsequent skip fetches a fresh random page and picks a random valid character
+- No page caching — this was intentionally simplified after a bug where cached pages caused characters to repeat
+
+**Film filter mode:**
+- Fetches all characters for that film in one request (`pageSize=200`) — most films have <100 characters
+- Caches the entire pool in a ref
+- Picks randomly from the cached pool on each skip, avoiding the previously-shown character
+
+**Why no preloading:** An earlier implementation attempted preloading the next character while the user viewed the current one. This introduced complexity (caching, shown-ID tracking, pool recycling) that caused a bug where "All" mode would cycle through the same 1-2 characters instead of fetching new pages. The simpler approach of fetching on each skip works reliably.
+
+### 6. No New Runtime Dependencies
 
 | Considered | Decision | Reason |
 |---|---|---|
-| `react-speech-recognition` | Skip | Custom hook is ~80 lines; avoids 15KB for features we don't need |
-| `string-similarity` | Skip | Levenshtein is ~20 lines to implement inline |
+| `react-speech-recognition` | Skip | Custom hook is ~80 lines; avoids extra bundle size |
+| `string-similarity` | Skip | Levenshtein distance is ~20 lines inline |
 | `react-router-dom` | Skip | Two modes don't warrant a router |
 
----
+### 7. Request Cancellation
 
-## Implementation Phases
+The `useDisneyCharacter` hook uses `AbortController` to cancel in-flight requests when:
+- The user skips before the current fetch completes
+- The component unmounts (mode switch)
+- The film filter changes
 
-### Phase 1: Foundation
-- Create `src/types/disney.ts` (TypeScript interfaces)
-- Create `src/types/speechRecognition.d.ts` (Web Speech API types)
-- Create `src/utils/nameMatching.ts` (matching logic)
-
-### Phase 2: Hooks
-- Create `src/hooks/useSpeechRecognition.ts`
-- Create `src/hooks/useDisneyCharacter.ts`
-
-### Phase 3: Refactor Existing Code
-- Extract current `App.tsx` body into `src/components/NoiseColorMode.tsx`
-- Simplify `App.tsx` to a mode-switching shell
-- Verify existing behavior is unchanged
-
-### Phase 4: Mode Switching UI
-- Create `src/components/ModeSwitcher.tsx`
-- Add mode state and conditional rendering in `App.tsx`
-- Add switcher styles to `App.css`
-
-### Phase 5: Quiz Components
-- Build all `src/components/disney-quiz/` components
-- Wire up `DisneyQuizMode` with hooks and child components
-- Add quiz styles to `App.css`
-
-### Phase 6: Integration & Polish
-- End-to-end testing across the full quiz flow
-- Handle edge cases (broken images, unsupported browser, API errors, empty transcript)
-- Mobile responsive testing
+This prevents race conditions and state updates on unmounted components.
 
 ---
 
-## Known Limitations & Mitigations
+## Bugs Encountered & Fixed
 
-| Limitation | Impact | Mitigation |
-|---|---|---|
-| Web Speech API is Chrome/Chromium only | Firefox/non-Chromium Safari users can't use quiz mode | Detect support and show a clear browser requirement message. Noise Color mode still works everywhere. |
-| Disney API images may be broken | Some characters have 404 or low-res images | `onError` handler auto-skips to next character. Filter to characters with `films.length > 0` for better quality. |
-| Unusual character names ("Yzma", "Pua", "Te Fiti") | Speech recognition may not transcribe these accurately | Fuzzy matching with 0.7 threshold. Optional film hint ("From: Moana"). Skip button for unrecognizable characters. |
-| Disney API image URLs may be HTTP | Mixed content blocked on HTTPS pages | API base URL supports HTTPS. For image URLs, test and fall back to placeholder if blocked. |
-| Microphone conflict between modes | Two modes both need mic access | Conditional rendering unmounts the inactive mode, which triggers cleanup and releases the mic before the new mode mounts. |
+### 1. `data.data.filter is not a function`
+
+**Cause:** Disney API returns `data` as a single object (not an array) when exactly one character matches a query (e.g., `?films=Cars`).
+
+**Fix:** Added `normalizeData()` helper that wraps single objects in an array. Updated `DisneyApiResponse` type to use a union: `data: DisneyCharacter[] | DisneyCharacter`.
+
+### 2. Cars images returning 404
+
+**Cause:** Disney Fandom wiki CDN blocks hotlinked images when a `Referer` header is present from a non-Fandom domain.
+
+**Fix:** Downloaded all 13 Cars character images locally to `public/images/cars/`. Updated `carsCharacters.ts` to reference local paths.
+
+### 3. "All" mode skip not changing character
+
+**Cause:** The previous implementation cached page results and tracked shown character IDs in a `Set`. When all cached characters had been shown, it cleared the set and recycled — but never fetched new pages. With the popularity filter reducing most pages to 1-2 valid characters, users were stuck seeing the same characters repeatedly.
+
+**Fix:** Simplified the hook to fetch a fresh random page on every skip in "All" mode, with no caching or shown-ID tracking.
+
+---
+
+## Remaining Work: Part 2 — Voice Recognition
+
+### What's Already Built (Scaffolding)
+
+These files exist but are not yet wired up:
+
+- **`src/types/speechRecognition.d.ts`** — TypeScript declarations for the Web Speech API (`SpeechRecognition`, `SpeechRecognitionEvent`, etc.)
+- **`src/utils/nameMatching.ts`** — Fuzzy name matching with 5 layers:
+  1. Exact match (confidence: 1.0)
+  2. Contains match (confidence: 0.95)
+  3. First-name/keyword match for multi-word names (confidence: 0.85)
+  4. Levenshtein distance on full strings (threshold: 0.7)
+  5. Levenshtein distance on individual transcript words vs name
+- **`src/components/disney-quiz/SpeechFeedback.tsx`** — UI for listening indicator, interim/final transcript
+- **`src/components/disney-quiz/QuizResult.tsx`** — Correct/incorrect feedback with character name reveal
+- **`src/components/disney-quiz/ScoreBoard.tsx`** — Score display (hidden when 0 attempts)
+
+### What Needs to Be Built
+
+1. **`src/hooks/useSpeechRecognition.ts`** — New hook wrapping the Web Speech API:
+   - Store `SpeechRecognition` instance in a ref
+   - Return `{ transcript, interimTranscript, isListening, isSupported, error, startListening, stopListening, resetTranscript }`
+   - Clean up via `recognition.abort()` on unmount
+   - Configuration: `continuous = false`, `interimResults = true`, `lang = 'en-US'`
+
+2. **Wire up `DisneyQuizMode.tsx`**:
+   - Import and call `useSpeechRecognition`
+   - Enable the "Speak Answer" button (currently disabled)
+   - On speech end: compare transcript to `character.name` using `isNameMatch()`
+   - Update score/totalAttempts state
+   - Change background color on correct answer
+   - Show QuizResult component with correct/incorrect feedback
+   - Auto-advance to next character after a delay (or on "Next" button click)
+
+3. **Browser compatibility handling**:
+   - Detect Web Speech API support on mount
+   - Show a message for unsupported browsers: "Voice recognition requires Chrome or Edge"
+   - The quiz should still be usable without voice (skip-only mode)
+
+### Browser Support
+
+| Browser | Web Speech API |
+|---|---|
+| Chrome/Chromium | Full support |
+| Edge | Full support |
+| Safari | Partial support |
+| Firefox | Not supported |
 
 ---
 
@@ -316,5 +309,4 @@ The project currently has zero runtime dependencies beyond React. This feature m
 
 - Disney API: https://disneyapi.dev / https://disneyapi.dev/docs
 - Web Speech API (MDN): https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API
-- Using the Web Speech API: https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API/Using_the_Web_Speech_API
 - SpeechRecognition interface: https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition
