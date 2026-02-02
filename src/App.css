@@ -574,6 +574,21 @@ html, body, #root {
   color: white;
 }
 
+.quiz-action-button.listen.active {
+  background: #ef4444;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.browser-warning {
+  font-size: 13px;
+  color: #888;
+  text-align: center;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 10px;
+  max-width: 240px;
+}
+
 .quiz-action-button.skip {
   background: rgba(0, 0, 0, 0.08);
   color: #555;

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ColorBackground } from '../ColorBackground';
 import { CharacterDisplay } from './CharacterDisplay';
 import { ScoreBoard } from './ScoreBoard';
@@ -6,7 +6,9 @@ import { SpeechFeedback } from './SpeechFeedback';
 import { QuizResult } from './QuizResult';
 import { MovieFilter } from './MovieFilter';
 import { useDisneyCharacter } from '../../hooks/useDisneyCharacter';
-import { getInitialColor } from '../../utils/colors';
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { isNameMatch } from '../../utils/nameMatching';
+import { getInitialColor, getRandomPastelColor } from '../../utils/colors';
 
 export function DisneyQuizMode() {
   const [filmFilter, setFilmFilter] = useState('');
@@ -14,21 +16,57 @@ export function DisneyQuizMode() {
   const { character, isLoading, error, fetchNextCharacter } =
     useDisneyCharacter(filmFilter || undefined);
 
-  const [backgroundColor] = useState(getInitialColor);
-  const [score] = useState(0);
-  const [totalAttempts] = useState(0);
-  const [result, setResult] = useState<'correct' | 'incorrect' | null>(null);
-  const [transcript, setTranscript] = useState('');
+  const {
+    transcript,
+    interimTranscript,
+    isListening,
+    isSupported,
+    error: speechError,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useSpeechRecognition();
 
-  // Placeholder states for speech — will be connected in Part 2
-  const [isListening] = useState(false);
-  const [interimTranscript] = useState('');
+  const [backgroundColor, setBackgroundColor] = useState(getInitialColor);
+  const [score, setScore] = useState(0);
+  const [totalAttempts, setTotalAttempts] = useState(0);
+  const [result, setResult] = useState<'correct' | 'incorrect' | null>(null);
+
+  // Track whether we've already evaluated the current transcript
+  const evaluatedRef = useRef(false);
+
+  // Evaluate answer when speech recognition produces a final transcript
+  useEffect(() => {
+    if (!transcript || !character || result || evaluatedRef.current) return;
+    evaluatedRef.current = true;
+
+    const { isMatch } = isNameMatch(transcript, character.name);
+    setTotalAttempts((prev) => prev + 1);
+
+    if (isMatch) {
+      setScore((prev) => prev + 1);
+      setBackgroundColor(getRandomPastelColor());
+      setResult('correct');
+    } else {
+      setResult('incorrect');
+    }
+  }, [transcript, character, result]);
 
   const handleNext = useCallback(() => {
     setResult(null);
-    setTranscript('');
+    evaluatedRef.current = false;
+    resetTranscript();
     fetchNextCharacter();
-  }, [fetchNextCharacter]);
+  }, [fetchNextCharacter, resetTranscript]);
+
+  const handleListen = useCallback(() => {
+    if (isListening) {
+      stopListening();
+    } else {
+      evaluatedRef.current = false;
+      startListening();
+    }
+  }, [isListening, startListening, stopListening]);
 
   const handleImageError = useCallback(() => {
     fetchNextCharacter();
@@ -37,6 +75,19 @@ export function DisneyQuizMode() {
   const handleRetry = useCallback(() => {
     fetchNextCharacter();
   }, [fetchNextCharacter]);
+
+  // Reset score when film filter changes
+  const prevFilterRef = useRef(filmFilter);
+  useEffect(() => {
+    if (prevFilterRef.current !== filmFilter) {
+      prevFilterRef.current = filmFilter;
+      setScore(0);
+      setTotalAttempts(0);
+      setResult(null);
+      evaluatedRef.current = false;
+      resetTranscript();
+    }
+  }, [filmFilter, resetTranscript]);
 
   return (
     <ColorBackground color={backgroundColor}>
@@ -67,6 +118,10 @@ export function DisneyQuizMode() {
               />
             )}
 
+            {(speechError && !result) && (
+              <div className="error-message">{speechError}</div>
+            )}
+
             {result && character && (
               <QuizResult
                 result={result}
@@ -78,16 +133,22 @@ export function DisneyQuizMode() {
 
             {!isLoading && character && !result && (
               <div className="quiz-controls">
-                <button
-                  className="quiz-action-button listen"
-                  disabled={true}
-                  title="Voice recognition coming in Part 2"
-                >
-                  Speak Answer (Coming Soon)
-                </button>
+                {isSupported ? (
+                  <button
+                    className={`quiz-action-button listen ${isListening ? 'active' : ''}`}
+                    onClick={handleListen}
+                  >
+                    {isListening ? 'Listening...' : 'Speak Answer'}
+                  </button>
+                ) : (
+                  <div className="browser-warning">
+                    Voice recognition requires Chrome or Edge.
+                  </div>
+                )}
                 <button
                   className="quiz-action-button skip"
                   onClick={handleNext}
+                  disabled={isListening}
                 >
                   Skip
                 </button>
