@@ -1,15 +1,13 @@
 interface QuizResultProps {
   result: 'correct' | 'incorrect' | null;
   characterName: string;
-  userTranscript: string;
-  onNext: () => void;
+  countdown: number | null;
 }
 
 export function QuizResult({
   result,
   characterName,
-  userTranscript,
-  onNext,
+  countdown,
 }: QuizResultProps) {
   if (!result) return null;
 
@@ -20,21 +18,18 @@ export function QuizResult({
       </div>
       <div className="quiz-result-text">
         {result === 'correct' ? (
-          <span>Correct!</span>
+          <span>Correct! It's <strong>{characterName}</strong></span>
         ) : (
           <span>
             It was <strong>{characterName}</strong>
           </span>
         )}
       </div>
-      {userTranscript && (
-        <div className="quiz-result-transcript">
-          You said: &ldquo;{userTranscript}&rdquo;
+      {countdown !== null && countdown > 0 && (
+        <div className="quiz-countdown">
+          Next in {countdown}...
         </div>
       )}
-      <button className="quiz-next-button" onClick={onNext}>
-        Next
-      </button>
     </div>
   );
 }

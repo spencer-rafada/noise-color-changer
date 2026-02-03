@@ -6,7 +6,7 @@ The Noise Color Changer app has been extended into a two-mode application. The n
 
 **Target audience:** General / all ages.
 
-**Status:** Part 1 (character display, filtering, skipping) is complete. Part 2 (voice recognition) is not yet implemented.
+**Status:** Complete. Part 1 (character display, filtering, skipping), Part 2 (voice recognition), and Part 3 (auto-advance timer) are all implemented.
 
 ---
 
@@ -24,23 +24,20 @@ The Noise Color Changer app has been extended into a two-mode application. The n
   (existing behavior)     (new feature)
 ```
 
-### Current Quiz Flow (Part 1)
+### Quiz Flow
 
 1. App fetches a random Disney character from the API (or hardcoded pool).
 2. Character image is displayed with a film hint ("From: Frozen").
-3. User can **Skip** to load the next character.
-4. A **Movie Filter** dropdown lets users limit characters to a specific film.
-5. "Speak Answer" button is visible but disabled (placeholder for Part 2).
-
-### Planned Quiz Flow (Part 2 — Not Yet Implemented)
-
-1. User taps **"Start Listening"** to activate the microphone.
-2. User speaks the character's name.
-3. App transcribes speech in real-time (interim results shown).
-4. Final transcript is compared to the character name using fuzzy matching.
-5. **Correct** — green feedback, score increments, background color changes.
-6. **Incorrect** — the correct name is revealed.
-7. "Next" button loads the next character.
+3. A **Movie Filter** dropdown lets users limit characters to a specific film.
+4. User taps **"Speak Answer"** to activate the microphone.
+5. User speaks the character's name.
+6. App transcribes speech in real-time (interim results shown).
+7. Final transcript is compared to the character name using fuzzy matching.
+8. **Correct** — green feedback, score increments, background color changes.
+9. **Incorrect** — the correct name is revealed.
+10. A **3-second countdown** ("Next in 3... 2... 1...") auto-advances to the next character.
+11. The quiz loops endlessly until the user navigates away — no manual "Next" button needed.
+12. User can **Skip** at any time to load the next character without answering.
 
 ---
 
@@ -97,23 +94,24 @@ src/
 │   │   ├── DisneyQuizMode.tsx        # Main quiz orchestrator
 │   │   ├── CharacterDisplay.tsx      # Character image + loading spinner
 │   │   ├── MovieFilter.tsx           # Film dropdown selector
-│   │   ├── SpeechFeedback.tsx        # Transcript & listening indicator (Part 2)
-│   │   ├── QuizResult.tsx            # Correct/incorrect feedback (Part 2)
-│   │   └── ScoreBoard.tsx            # Score tracker (Part 2)
+│   │   ├── SpeechFeedback.tsx        # Transcript & listening indicator
+│   │   ├── QuizResult.tsx            # Correct/incorrect feedback + countdown
+│   │   └── ScoreBoard.tsx            # Score tracker
 │   ├── ColorBackground.tsx           # Unchanged (reused by quiz)
 │   ├── ControlPanel.tsx              # Unchanged
 │   ├── Slider.tsx                    # Unchanged
 │   └── SoundLevelMeter.tsx           # Unchanged
 ├── hooks/
 │   ├── useDisneyCharacter.ts         # Character fetching + filtering
+│   ├── useSpeechRecognition.ts       # Web Speech API wrapper
 │   ├── useAudioLevel.ts              # Unchanged
 │   └── useBackgroundMusic.ts         # Unchanged
 ├── utils/
-│   ├── nameMatching.ts               # Fuzzy name comparison (for Part 2)
+│   ├── nameMatching.ts               # Fuzzy name comparison
 │   └── colors.ts                     # Unchanged (reused for quiz bg)
 ├── types/
 │   ├── disney.ts                     # Disney API type definitions
-│   └── speechRecognition.d.ts        # Web Speech API types (for Part 2)
+│   └── speechRecognition.d.ts        # Web Speech API types
 ├── data/
 │   └── carsCharacters.ts             # Hardcoded Cars characters
 ├── App.tsx                           # Thin shell with mode state
@@ -145,9 +143,9 @@ DisneyQuizMode
         ├── ScoreBoard
         ├── MovieFilter
         ├── CharacterDisplay (image + loading spinner + film hint)
-        ├── SpeechFeedback (Part 2)
-        ├── QuizResult (Part 2)
-        └── Quiz controls (Speak Answer [disabled], Skip)
+        ├── SpeechFeedback (listening indicator + transcript)
+        ├── QuizResult (correct/incorrect feedback + auto-advance countdown)
+        └── Quiz controls (Speak Answer, Skip)
 ```
 
 ---
@@ -255,44 +253,36 @@ This prevents race conditions and state updates on unmounted components.
 
 ---
 
-## Remaining Work: Part 2 — Voice Recognition
+## Voice Recognition (Part 2)
 
-### What's Already Built (Scaffolding)
+### Implementation
 
-These files exist but are not yet wired up:
+- **`src/hooks/useSpeechRecognition.ts`** — Custom hook wrapping the Web Speech API:
+  - Stores `SpeechRecognition` instance in a ref
+  - Returns `{ transcript, interimTranscript, isListening, isSupported, error, startListening, stopListening, resetTranscript }`
+  - Cleans up via `recognition.abort()` on unmount
+  - Configuration: `continuous = false`, `interimResults = true`, `lang = 'en-US'`
 
-- **`src/types/speechRecognition.d.ts`** — TypeScript declarations for the Web Speech API (`SpeechRecognition`, `SpeechRecognitionEvent`, etc.)
 - **`src/utils/nameMatching.ts`** — Fuzzy name matching with 5 layers:
   1. Exact match (confidence: 1.0)
   2. Contains match (confidence: 0.95)
   3. First-name/keyword match for multi-word names (confidence: 0.85)
   4. Levenshtein distance on full strings (threshold: 0.7)
   5. Levenshtein distance on individual transcript words vs name
-- **`src/components/disney-quiz/SpeechFeedback.tsx`** — UI for listening indicator, interim/final transcript
-- **`src/components/disney-quiz/QuizResult.tsx`** — Correct/incorrect feedback with character name reveal
-- **`src/components/disney-quiz/ScoreBoard.tsx`** — Score display (hidden when 0 attempts)
 
-### What Needs to Be Built
+- **`DisneyQuizMode.tsx`** orchestration:
+  - Calls `useSpeechRecognition` hook
+  - "Speak Answer" button toggles microphone on/off
+  - On speech end: compares transcript to `character.name` using `isNameMatch()`
+  - Updates score/totalAttempts state
+  - Changes background color on correct answer
+  - Shows `QuizResult` with correct/incorrect feedback
+  - Prevents double-evaluation via `evaluatedRef`
 
-1. **`src/hooks/useSpeechRecognition.ts`** — New hook wrapping the Web Speech API:
-   - Store `SpeechRecognition` instance in a ref
-   - Return `{ transcript, interimTranscript, isListening, isSupported, error, startListening, stopListening, resetTranscript }`
-   - Clean up via `recognition.abort()` on unmount
-   - Configuration: `continuous = false`, `interimResults = true`, `lang = 'en-US'`
-
-2. **Wire up `DisneyQuizMode.tsx`**:
-   - Import and call `useSpeechRecognition`
-   - Enable the "Speak Answer" button (currently disabled)
-   - On speech end: compare transcript to `character.name` using `isNameMatch()`
-   - Update score/totalAttempts state
-   - Change background color on correct answer
-   - Show QuizResult component with correct/incorrect feedback
-   - Auto-advance to next character after a delay (or on "Next" button click)
-
-3. **Browser compatibility handling**:
-   - Detect Web Speech API support on mount
-   - Show a message for unsupported browsers: "Voice recognition requires Chrome or Edge"
-   - The quiz should still be usable without voice (skip-only mode)
+- **UI components:**
+  - `SpeechFeedback` — Pulsing mic indicator while listening, displays interim and final transcripts
+  - `QuizResult` — Green checkmark (correct) or red X (incorrect) with character name reveal
+  - `ScoreBoard` — Score display (hidden when 0 attempts)
 
 ### Browser Support
 
@@ -302,6 +292,45 @@ These files exist but are not yet wired up:
 | Edge | Full support |
 | Safari | Partial support |
 | Firefox | Not supported |
+
+Unsupported browsers show: "Voice recognition requires Chrome or Edge". The quiz remains usable without voice (skip-only mode).
+
+---
+
+## Auto-Advance Timer (Part 3)
+
+### Design Goal
+
+Minimize user interaction after answering. The quiz should feel like an endless loop — start it, answer by voice, and it keeps going. No need to tap "Next" between characters.
+
+### Implementation
+
+When a result is shown (correct or incorrect), a 3-second countdown starts automatically:
+
+1. `result` state is set → `useEffect` fires, initializing `countdown` to 3
+2. A `setInterval` ticks the countdown down every second (3 → 2 → 1 → 0)
+3. A second `useEffect` watches for `countdown === 0` and calls `handleNext()`
+4. `handleNext()` clears the countdown, resets state, and fetches the next character
+
+The countdown is displayed in `QuizResult` as "Next in 3..." text (styled in indigo).
+
+### Cleanup
+
+- `countdownRef` stores the interval ID for manual cleanup
+- `clearCountdown()` helper clears the interval and resets state
+- The `useEffect` return function clears the interval on unmount or when `result` changes
+- `handleNext()` calls `clearCountdown()` to prevent stale timers
+
+### State
+
+```typescript
+const [countdown, setCountdown] = useState<number | null>(null);
+const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+```
+
+- `countdown: null` — no countdown active
+- `countdown: 3/2/1` — counting down, displayed in UI
+- `countdown: 0` — triggers auto-advance
 
 ---
 

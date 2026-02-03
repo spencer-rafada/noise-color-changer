@@ -520,27 +520,11 @@ html, body, #root {
   color: #333;
 }
 
-.quiz-result-transcript {
-  font-size: 13px;
-  color: #888;
-}
-
-.quiz-next-button {
+.quiz-countdown {
   margin-top: 8px;
-  padding: 10px 32px;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  border: none;
-  border-radius: 10px;
-  background: #6366f1;
-  color: white;
-  cursor: pointer;
-  transition: transform 0.1s;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.quiz-next-button:active {
-  transform: scale(0.97);
+  color: #6366f1;
 }
 
 /* Quiz Controls */
