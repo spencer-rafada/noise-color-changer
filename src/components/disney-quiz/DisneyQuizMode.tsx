@@ -31,9 +31,11 @@ export function DisneyQuizMode() {
   const [score, setScore] = useState(0);
   const [totalAttempts, setTotalAttempts] = useState(0);
   const [result, setResult] = useState<'correct' | 'incorrect' | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   // Track whether we've already evaluated the current transcript
   const evaluatedRef = useRef(false);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Evaluate answer when speech recognition produces a final transcript
   useEffect(() => {
@@ -52,12 +54,21 @@ export function DisneyQuizMode() {
     }
   }, [transcript, character, result]);
 
+  const clearCountdown = useCallback(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
   const handleNext = useCallback(() => {
+    clearCountdown();
     setResult(null);
     evaluatedRef.current = false;
     resetTranscript();
     fetchNextCharacter();
-  }, [fetchNextCharacter, resetTranscript]);
+  }, [fetchNextCharacter, resetTranscript, clearCountdown]);
 
   const handleListen = useCallback(() => {
     if (isListening) {
@@ -75,6 +86,35 @@ export function DisneyQuizMode() {
   const handleRetry = useCallback(() => {
     fetchNextCharacter();
   }, [fetchNextCharacter]);
+
+  // Auto-advance countdown when result is shown
+  useEffect(() => {
+    if (!result) return;
+
+    setCountdown(3);
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    countdownRef.current = interval;
+
+    return () => {
+      clearInterval(interval);
+      countdownRef.current = null;
+    };
+  }, [result]);
+
+  // Trigger advance when countdown reaches 0
+  useEffect(() => {
+    if (countdown === 0) {
+      handleNext();
+    }
+  }, [countdown, handleNext]);
 
   // Reset score when film filter changes
   const prevFilterRef = useRef(filmFilter);
@@ -127,7 +167,7 @@ export function DisneyQuizMode() {
                 result={result}
                 characterName={character.name}
                 userTranscript={transcript}
-                onNext={handleNext}
+                countdown={countdown}
               />
             )}
 
