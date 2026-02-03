@@ -520,11 +520,6 @@ html, body, #root {
   color: #333;
 }
 
-.quiz-result-transcript {
-  font-size: 13px;
-  color: #888;
-}
-
 .quiz-countdown {
   margin-top: 8px;
   font-size: 15px;

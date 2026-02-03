@@ -36,11 +36,14 @@ export function DisneyQuizMode() {
   // Track whether we've already evaluated the current transcript
   const evaluatedRef = useRef(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track whether voice was active so we can auto-restart after advancing
+  const wasListeningRef = useRef(false);
 
   // Evaluate answer when speech recognition produces a final transcript
   useEffect(() => {
     if (!transcript || !character || result || evaluatedRef.current) return;
     evaluatedRef.current = true;
+    wasListeningRef.current = true;
 
     const { isMatch } = isNameMatch(transcript, character.name);
     setTotalAttempts((prev) => prev + 1);
@@ -64,11 +67,15 @@ export function DisneyQuizMode() {
 
   const handleNext = useCallback(() => {
     clearCountdown();
+    const shouldAutoListen = wasListeningRef.current;
     setResult(null);
     evaluatedRef.current = false;
     resetTranscript();
     fetchNextCharacter();
-  }, [fetchNextCharacter, resetTranscript, clearCountdown]);
+    if (shouldAutoListen) {
+      startListening();
+    }
+  }, [fetchNextCharacter, resetTranscript, clearCountdown, startListening]);
 
   const handleListen = useCallback(() => {
     if (isListening) {
@@ -166,7 +173,6 @@ export function DisneyQuizMode() {
               <QuizResult
                 result={result}
                 characterName={character.name}
-                userTranscript={transcript}
                 countdown={countdown}
               />
             )}
@@ -178,7 +184,7 @@ export function DisneyQuizMode() {
                     className={`quiz-action-button listen ${isListening ? 'active' : ''}`}
                     onClick={handleListen}
                   >
-                    {isListening ? 'Listening...' : 'Speak Answer'}
+                    {isListening ? 'Stop' : 'Speak Answer'}
                   </button>
                 ) : (
                   <div className="browser-warning">
