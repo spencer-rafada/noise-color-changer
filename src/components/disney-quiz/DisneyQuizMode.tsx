@@ -7,6 +7,7 @@ import { QuizResult } from './QuizResult';
 import { MovieFilter } from './MovieFilter';
 import { useDisneyCharacter } from '../../hooks/useDisneyCharacter';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { useQuizAudio } from '../../hooks/useQuizAudio';
 import { isNameMatch } from '../../utils/nameMatching';
 import { getInitialColor, getRandomPastelColor } from '../../utils/colors';
 
@@ -26,6 +27,8 @@ export function DisneyQuizMode() {
     stopListening,
     resetTranscript,
   } = useSpeechRecognition();
+
+  const { playCorrect, playIncorrect, playTick, playTransition } = useQuizAudio();
 
   const [backgroundColor, setBackgroundColor] = useState(getInitialColor);
   const [score, setScore] = useState(0);
@@ -52,8 +55,10 @@ export function DisneyQuizMode() {
       setScore((prev) => prev + 1);
       setBackgroundColor(getRandomPastelColor());
       setResult('correct');
+      playCorrect();
     } else {
       setResult('incorrect');
+      playIncorrect();
     }
   }, [transcript, character, result]);
 
@@ -71,11 +76,12 @@ export function DisneyQuizMode() {
     setResult(null);
     evaluatedRef.current = false;
     resetTranscript();
+    playTransition();
     fetchNextCharacter();
     if (shouldAutoListen) {
       startListening();
     }
-  }, [fetchNextCharacter, resetTranscript, clearCountdown, startListening]);
+  }, [fetchNextCharacter, resetTranscript, clearCountdown, startListening, playTransition]);
 
   const handleListen = useCallback(() => {
     if (isListening) {
@@ -105,6 +111,7 @@ export function DisneyQuizMode() {
           clearInterval(interval);
           return 0;
         }
+        playTick();
         return prev - 1;
       });
     }, 1000);
